@@ -1,14 +1,17 @@
+
 import re
-from functools import partial
 
 import jieba
 import numpy as np
 import torch
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
 
 import os
+import platform
+import logging
+from pathlib import Path
 
 
 class PaperChecker:
@@ -60,6 +63,7 @@ class PaperChecker:
         sentences1 = self.preprocess(text1)
         sentences2 = self.preprocess(text2)
 
+        # 文本to向量
         embeddings1 = self.embed_sentences(sentences1)
         embeddings2 = self.embed_sentences(sentences2)
 
@@ -106,10 +110,48 @@ def compare_papers(orig_text, plagiarism_texts, checker, threshold=0.5):
 
     return results
 
-def main():
-    # 用户输入原始文件路径
-    orig_file_path = input("请输入原始论文的路径（例如: test\\orig.txt）: ")
+def validate_file_path(file_path):
+    """综合验证文件路径的规范性"""
+    try:
+        # 空值检查
+        if not file_path:
+            raise ValueError("文件路径不能为空")
 
+        # 路径标准化处理
+        cleaned_path = os.path.normpath(file_path)
+        if platform.system() == 'Windows':
+            cleaned_path = cleaned_path.replace('/', '\\')
+
+        # 路径有效性验证
+        path = Path(cleaned_path)
+        if not path.exists():
+            raise FileNotFoundError(f"文件不存在: {cleaned_path}")
+        if not path.is_file():
+            raise IsADirectoryError(f"路径指向的是目录: {cleaned_path}")
+
+        # 文件扩展名检查
+        valid_extensions = {'.txt', '.md', '.docx'}
+        if path.suffix.lower() not in valid_extensions:
+            raise ValueError(f"不支持的文件格式: {path.suffix}，仅支持{valid_extensions}")
+
+        # 文件名规范检查
+        if not re.match(r'^[\w\-\.() ]+$', path.name):
+            raise ValueError("文件名包含非法字符")
+
+        # 文件大小限制（最大10MB）
+        max_size = 10 * 1024 * 1024  # 10MB
+        if path.stat().st_size > max_size:
+            raise ValueError("文件大小超过10MB限制")
+        if path.stat().st_size == 0:
+            raise ValueError("文件内容为空")
+
+        return str(path.absolute())
+
+    except Exception as e:
+        logging.error(f"文件验证失败: {file_path} - {str(e)}")
+        raise
+
+def main():
     # 启动异步加载模型
     with ThreadPoolExecutor(max_workers=2) as executor:
         # 提交模型加载任务
@@ -120,18 +162,25 @@ def main():
             use_gpu=True
         )
 
+        # 用户输入原始文件路径
+        orig_file_path = input("请输入原始论文的路径（例如: test\\orig.txt）: ")
+        validate_file_path(orig_file_path)
+
+        # 异步读取文件内容（直接传递原始文本）
+        orig_text_future = executor.submit(read_file, orig_file_path)
+
+
         # 用户输入抄袭论文路径（此时模型加载在后台进行）
         plagiarism_file_path = input("请输入要对比的抄袭论文路径（例如: test\\orig_0.8_add.txt）: ")
+
+        plagiarism_text_future = executor.submit(read_file, plagiarism_file_path)
+        # 获取原始文本内容
+        orig_text = orig_text_future.result()
+
 
         # 等待模型加载完成
         checker = checker_future.result()
 
-        # 异步读取文件内容（直接传递原始文本）
-        orig_text_future = executor.submit(read_file, orig_file_path)
-        plagiarism_text_future = executor.submit(read_file, plagiarism_file_path)
-
-        # 获取原始文本内容
-        orig_text = orig_text_future.result()
         plagiarism_text = plagiarism_text_future.result()
 
         # 直接调用检查相似度方法
