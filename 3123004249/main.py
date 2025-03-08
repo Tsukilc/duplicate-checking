@@ -10,9 +10,7 @@ import os
 import platform
 import logging
 from pathlib import Path
-import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from functools import partial
 
 import model
 
@@ -175,7 +173,7 @@ def main():
         checker_future = executor.submit(
             PaperChecker,
             model_name=model.MODEL_NAME,
-            cache_dir="./models",
+            cache_dir="models",
             use_gpu=True
         )
 
@@ -202,7 +200,7 @@ def main():
         score, result = checker.check_similarity(orig_text, plagiarism_text)
 
         # 输出结果到文件
-        with open("ans.txt", "w", encoding="utf-8") as f:
+        with open("../ans.txt", "w", encoding="utf-8") as f:
             f.write(f"原文: {orig_file_path}\n")
             f.write(f"抄袭论文: {plagiarism_file_path}\n\n")
             f.write("查重结果：\n\n")

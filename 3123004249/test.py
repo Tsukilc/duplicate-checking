@@ -1,10 +1,6 @@
-import pickle
-
 import pytest
 import os
 import tempfile
-
-import torch
 
 from main import PaperChecker
 
@@ -46,7 +42,7 @@ class TestModelLoading:
     @pytest.fixture(autouse=True)
     def clean_cache(self):
         # 清理模型缓存
-        cache_path = os.path.join("./models", "fast_model.pt")
+        cache_path = os.path.join("models", "fast_model.pt")
         if os.path.exists(cache_path):
             os.remove(cache_path)
         yield
