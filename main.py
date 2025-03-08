@@ -1,9 +1,12 @@
+import re
+from functools import partial
+
 import jieba
 import numpy as np
 import torch
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 
 import os
 
@@ -81,19 +84,32 @@ def read_file(file_path):
     with open(file_path, "r", encoding="utf-8") as f:
         return f.read()
 
+
 def compare_papers(orig_text, plagiarism_texts, checker, threshold=0.5):
-    """对比原文和抄袭文本，输出相似度"""
+    """多线程版对比函数"""
     results = []
-    for i, paper_text in enumerate(plagiarism_texts):
+
+    def _process_single(i, paper_text):
+        """单任务处理函数"""
         score, result = checker.check_similarity(orig_text, paper_text, threshold)
-        results.append(f"与抄袭论文 {i + 1} 的相似度：{score:.4f}, 查重结果：{result}\n")
+        return f"与抄袭论文 {i + 1} 的相似度：{score:.4f}, 查重结果：{result}\n"
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        # 提交所有任务（保持顺序）
+        futures = [
+            executor.submit(_process_single, i, paper_text)
+            for i, paper_text in enumerate(plagiarism_texts)
+        ]
+
+        # 按提交顺序获取结果
+        results = [future.result() for future in futures]
+
     return results
 
 def main():
     # 读取原文
     orig_file_path = "test\\orig.txt"
     orig_text = read_file(orig_file_path)
-    print(orig_text)
 
     # 读取所有抄袭论文
     plagiarism_texts = []
