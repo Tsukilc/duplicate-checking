@@ -3,16 +3,34 @@ import numpy as np
 import torch
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
+from concurrent.futures import ThreadPoolExecutor
 
-import model
+import os
 
 
 class PaperChecker:
-    def __init__(self, model_name=model.MODEL_NAME, cache_dir="./models"):
+    def __init__(self, model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+                 cache_dir="./models", use_gpu=True):
         self.cache_dir = cache_dir
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        self.model = SentenceTransformer(model_name, cache_folder=self.cache_dir, device=device)
-        print(f"模型已加载至: {self.cache_dir}")
+        self.device = 'cuda' if torch.cuda.is_available() and use_gpu else 'cpu'
+
+        if not os.path.exists(self.cache_dir):
+            os.makedirs(self.cache_dir)
+
+        fast_model_path = os.path.join(self.cache_dir, "fast_model.pt")
+
+        if os.path.exists(fast_model_path):
+            print("加载优化后的模型...")
+            self.model = torch.load(fast_model_path,
+                                    weights_only=False,
+                                    map_location=self.device)
+        else:
+            print("初始化新模型...")
+            self.model = SentenceTransformer(model_name)
+            # 保存为权重文件
+            torch.save(self.model.state_dict(), fast_model_path)
+
+        print(f"模型加载完成，设备: {self.device}")
 
     def preprocess(self, text):
         """文本预处理（分词+去除空白）"""
@@ -34,33 +52,39 @@ class PaperChecker:
         return self.model.encode(sentences, convert_to_tensor=True)
 
     def check_similarity(self, text1, text2, threshold=0.7):
-        """计算两篇论文的相似度，并根据阈值判断是否为重复"""
         sentences1 = self.preprocess(text1)
         sentences2 = self.preprocess(text2)
 
         embeddings1 = self.embed_sentences(sentences1)
         embeddings2 = self.embed_sentences(sentences2)
 
-        # 计算余弦相似度
         similarity_matrix = cosine_similarity(embeddings1.cpu().numpy(), embeddings2.cpu().numpy())
-
-        # 取最大相似度作为最终评分
         max_similarities = similarity_matrix.max(axis=1)
         overall_similarity = np.mean(max_similarities)
 
-        # 根据阈值判断是否为重复
-        if overall_similarity >= threshold:
-            return overall_similarity, "有重复"
-        else:
-            return overall_similarity, "没有重复"
+        return (overall_similarity, "有重复") if overall_similarity >= threshold else (overall_similarity, "没有重复")
+
+    def check_multiple_pairs(self, pairs, threshold=0.7):
+        """并行检查多个文本对的相似度"""
+        results = []
+        with ThreadPoolExecutor() as executor:
+            future_to_pair = {executor.submit(self.check_similarity, pair[0], pair[1], threshold): pair for pair in
+                              pairs}
+            for future in future_to_pair:
+                similarity, result = future.result()
+                results.append((similarity, result))
+        return results
 
 
 # 示例
 if __name__ == "__main__":
-    paper1 = "我爱吃番茄，也很爱吃西红柿"
-    paper2 = "我喜欢吃西红柿和番茄。"
+    paper1 = "机器学习是人工智能的一个分支"
+    paper2 = "深度学习属于机器学习。"
 
-    checker = PaperChecker(model_name=model.MODEL_NAME, cache_dir="./models")
+    # 初始化 PaperChecker
+    checker = PaperChecker(model_name="sentence-transformers/paraphrase-xlm-r-multilingual-v1", cache_dir="./models",
+                           use_gpu=True)
+
+    # 比较两个句子的相似度
     score, result = checker.check_similarity(paper1, paper2, threshold=0.5)  # 设置阈值为 0.5
     print(f"论文相似度：{score:.4f}, 查重结果：{result}")
-
