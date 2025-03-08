@@ -24,7 +24,7 @@ class PaperChecker:
         torch.set_num_threads(12)
 
         if os.path.exists(fast_model_path):
-            print("加载优化后的模型...")
+            # print("加载优化后的模型...")
             self.model = torch.load(fast_model_path,
                                     weights_only=False,
                                     map_location=self.device)
@@ -34,7 +34,8 @@ class PaperChecker:
             # 保存为权重文件
             torch.save(self.model.state_dict(), fast_model_path)
 
-        print(f"模型加载完成，设备: {self.device}")
+
+        # print(f"模型加载完成，设备: {self.device}")
 
     def preprocess(self, text):
         """文本预处理（分词+去除空白）"""
@@ -106,33 +107,44 @@ def compare_papers(orig_text, plagiarism_texts, checker, threshold=0.5):
     return results
 
 def main():
-    # 读取原文
-    orig_file_path = "test\\orig.txt"
-    orig_text = read_file(orig_file_path)
+    # 用户输入原始文件路径
+    orig_file_path = input("请输入原始论文的路径（例如: test\\orig.txt）: ")
 
-    # 读取所有抄袭论文（保留文件名）
-    plagiarism_files = []
-    plagiarism_dir = "test"
-    for file_name in os.listdir(plagiarism_dir):
-        if file_name.startswith("orig_") and file_name.endswith(".txt"):
-            file_path = os.path.join(plagiarism_dir, file_name)
-            content = read_file(file_path)
-            plagiarism_files.append( (file_name, content) )  # 存储(文件名, 内容)元组
+    # 启动异步加载模型
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        # 提交模型加载任务
+        checker_future = executor.submit(
+            PaperChecker,
+            model_name="sentence-transformers/paraphrase-xlm-r-multilingual-v1",
+            cache_dir="./models",
+            use_gpu=True
+        )
 
-    # 初始化 PaperChecker
-    checker = PaperChecker(model_name="sentence-transformers/paraphrase-xlm-r-multilingual-v1", cache_dir="./models",
-                           use_gpu=True)
+        # 用户输入抄袭论文路径（此时模型加载在后台进行）
+        plagiarism_file_path = input("请输入要对比的抄袭论文路径（例如: test\\orig_0.8_add.txt）: ")
 
-    # 进行对比（传入包含文件名的列表）
-    comparison_results = compare_papers(orig_text, plagiarism_files, checker)
+        # 等待模型加载完成
+        checker = checker_future.result()
 
-    # 输出结果到 ans.txt
-    with open("ans.txt", "w", encoding="utf-8") as f:
-        f.write("原文与抄袭论文的查重结果：\n\n")
-        for result in comparison_results:
-            f.write(result)
+        # 异步读取文件内容（直接传递原始文本）
+        orig_text_future = executor.submit(read_file, orig_file_path)
+        plagiarism_text_future = executor.submit(read_file, plagiarism_file_path)
 
-    print("查重结果已输出到 ans.txt")
+        # 获取原始文本内容
+        orig_text = orig_text_future.result()
+        plagiarism_text = plagiarism_text_future.result()
+
+        # 直接调用检查相似度方法
+        score, result = checker.check_similarity(orig_text, plagiarism_text)
+
+        # 输出结果到文件
+        with open("ans.txt", "w", encoding="utf-8") as f:
+            f.write(f"原文: {orig_file_path}\n")
+            f.write(f"抄袭论文: {plagiarism_file_path}\n\n")
+            f.write("查重结果：\n\n")
+            f.write(f"与论文 {plagiarism_file_path} 的相似度：{score:.4f}, 查重结果：{result}\n")
+
+        print("查重结果已输出到 ans.txt")
 
 if __name__ == "__main__":
     main()
