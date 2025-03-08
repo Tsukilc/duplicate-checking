@@ -86,19 +86,18 @@ def read_file(file_path):
 
 
 def compare_papers(orig_text, plagiarism_texts, checker, threshold=0.5):
-    """多线程版对比函数"""
     results = []
 
-    def _process_single(i, paper_text):
+    def _process_single(file_name, paper_text):
         """单任务处理函数"""
         score, result = checker.check_similarity(orig_text, paper_text, threshold)
-        return f"与抄袭论文 {i + 1} 的相似度：{score:.4f}, 查重结果：{result}\n"
+        return f"与论文 {file_name} 的相似度：{score:.4f}, 查重结果：{result}\n"
 
     with ThreadPoolExecutor(max_workers=8) as executor:
         # 提交所有任务（保持顺序）
         futures = [
-            executor.submit(_process_single, i, paper_text)
-            for i, paper_text in enumerate(plagiarism_texts)
+            executor.submit(_process_single, file_name, paper_text)
+            for file_name, paper_text in plagiarism_texts
         ]
 
         # 按提交顺序获取结果
@@ -111,19 +110,21 @@ def main():
     orig_file_path = "test\\orig.txt"
     orig_text = read_file(orig_file_path)
 
-    # 读取所有抄袭论文
-    plagiarism_texts = []
+    # 读取所有抄袭论文（保留文件名）
+    plagiarism_files = []
     plagiarism_dir = "test"
     for file_name in os.listdir(plagiarism_dir):
         if file_name.startswith("orig_") and file_name.endswith(".txt"):
-            plagiarism_texts.append(read_file(os.path.join(plagiarism_dir, file_name)))
+            file_path = os.path.join(plagiarism_dir, file_name)
+            content = read_file(file_path)
+            plagiarism_files.append( (file_name, content) )  # 存储(文件名, 内容)元组
 
     # 初始化 PaperChecker
     checker = PaperChecker(model_name="sentence-transformers/paraphrase-xlm-r-multilingual-v1", cache_dir="./models",
                            use_gpu=True)
 
-    # 进行对比
-    comparison_results = compare_papers(orig_text, plagiarism_texts, checker)
+    # 进行对比（传入包含文件名的列表）
+    comparison_results = compare_papers(orig_text, plagiarism_files, checker)
 
     # 输出结果到 ans.txt
     with open("ans.txt", "w", encoding="utf-8") as f:
