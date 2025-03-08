@@ -19,6 +19,12 @@ class PaperChecker:
         sentences = text.replace("\n", "。").split("。")  # 以句号拆分
         sentences = [s.strip() for s in sentences if s.strip()]
 
+        # 分词并打印每个句子的分词结果
+        for sentence in sentences:
+            words = jieba.cut(sentence)  # 分词
+            word_list = ' '.join(words)  # 将分词结果拼接成字符串
+            print(f"分词结果：{word_list}")  # 打印分词结果
+
         # 返回分词后的句子
         sentences = [' '.join(jieba.cut(sentence)) for sentence in sentences]
         return sentences
