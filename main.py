@@ -18,6 +18,7 @@ class PaperChecker:
             os.makedirs(self.cache_dir)
 
         fast_model_path = os.path.join(self.cache_dir, "fast_model.pt")
+        torch.set_num_threads(12)
 
         if os.path.exists(fast_model_path):
             print("加载优化后的模型...")
@@ -78,8 +79,8 @@ class PaperChecker:
 
 # 示例
 if __name__ == "__main__":
-    paper1 = "机器学习是人工智能的一个分支"
-    paper2 = "深度学习属于机器学习。"
+    paper1 = "五冠霖"
+    paper2 = "人。"
 
     # 初始化 PaperChecker
     checker = PaperChecker(model_name="sentence-transformers/paraphrase-xlm-r-multilingual-v1", cache_dir="./models",
