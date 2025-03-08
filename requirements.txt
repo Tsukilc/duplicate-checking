@@ -1,19 +1,19 @@
-# 核心依赖
+# Core dependencies
 sentence-transformers==2.3.0
-torch==2.3.0+cpu  # GPU版需自行安装对应CUDA版本
+torch==2.3.0 # Use torch+cuda for GPU version
 jieba==0.42.1
 numpy==1.26.4
 scikit-learn==1.4.2
 
-# 开发测试
+# Development & Testing
 pytest==8.2.0
 pytest-cov==4.1.0
 pytest-asyncio==0.23.7
 
-# 辅助工具
+# Utilities
 huggingface-hub==0.22.2
-tqdm==4.66.2  # 进度条显示
-loguru==0.7.2  # 结构化日志
+tqdm==4.66.2
+loguru==0.7.2
 
-# 运行时优化
-threadpoolctl==3.5.0  # 线程控制
+# Optimization
+threadpoolctl==3.5.0
