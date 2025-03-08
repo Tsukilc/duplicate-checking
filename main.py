@@ -1,4 +1,3 @@
-
 import re
 
 import jieba
@@ -6,39 +5,54 @@ import numpy as np
 import torch
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
-from concurrent.futures import ThreadPoolExecutor
 
 import os
 import platform
 import logging
 from pathlib import Path
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
+
+import model
 
 
 class PaperChecker:
-    def __init__(self, model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+    def __init__(self, model_name=model.MODEL_NAME,
                  cache_dir="./models", use_gpu=True):
         self.cache_dir = cache_dir
         self.device = 'cuda' if torch.cuda.is_available() and use_gpu else 'cpu'
-
-        if not os.path.exists(self.cache_dir):
-            os.makedirs(self.cache_dir)
-
+        os.makedirs(self.cache_dir, exist_ok=True)
         fast_model_path = os.path.join(self.cache_dir, "fast_model.pt")
-        torch.set_num_threads(12)
 
+        # 确保始终初始化SentenceTransformer实例
+        self.model = SentenceTransformer(model_name)
+
+        # 加载参数逻辑修正
         if os.path.exists(fast_model_path):
-            # print("加载优化后的模型...")
-            self.model = torch.load(fast_model_path,
-                                    weights_only=False,
-                                    map_location=self.device)
+            try:
+                # 加载保存的模型参数到现有实例
+                state_dict = torch.load(fast_model_path, map_location=self.device)
+                self.model.load_state_dict(state_dict)
+            except Exception as e:
+                print(f"加载缓存失败，请重新执行model.py: {str(e)}")
         else:
-            print("初始化新模型...")
-            self.model = SentenceTransformer(model_name)
-            # 保存为权重文件
-            torch.save(self.model.state_dict(), fast_model_path)
+            self._save_model(fast_model_path)
 
+        self.model.to(self.device)
 
-        # print(f"模型加载完成，设备: {self.device}")
+    def _save_model(self, path):
+        """正确保存模型参数"""
+        torch.save(self.model.state_dict(), path)
+        print(f"模型参数已保存至: {path}")
+
+    def embed_sentences(self, sentences):
+        """编码方法调用修正"""
+        return self.model.encode(
+            sentences,
+            convert_to_tensor=True,
+            device=self.device  # 显式指定设备
+        )
 
     def preprocess(self, text):
         """文本预处理（分词+去除空白）"""
@@ -84,6 +98,7 @@ class PaperChecker:
                 results.append((similarity, result))
         return results
 
+
 def read_file(file_path):
     """读取文件内容"""
     with open(file_path, "r", encoding="utf-8") as f:
@@ -109,6 +124,7 @@ def compare_papers(orig_text, plagiarism_texts, checker, threshold=0.5):
         results = [future.result() for future in futures]
 
     return results
+
 
 def validate_file_path(file_path):
     """综合验证文件路径的规范性"""
@@ -151,13 +167,14 @@ def validate_file_path(file_path):
         logging.error(f"文件验证失败: {file_path} - {str(e)}")
         raise
 
+
 def main():
     # 启动异步加载模型
-    with ThreadPoolExecutor(max_workers=2) as executor:
+    with ThreadPoolExecutor(max_workers=4) as executor:
         # 提交模型加载任务
         checker_future = executor.submit(
             PaperChecker,
-            model_name="sentence-transformers/paraphrase-xlm-r-multilingual-v1",
+            model_name=model.MODEL_NAME,
             cache_dir="./models",
             use_gpu=True
         )
@@ -169,14 +186,12 @@ def main():
         # 异步读取文件内容（直接传递原始文本）
         orig_text_future = executor.submit(read_file, orig_file_path)
 
-
         # 用户输入抄袭论文路径（此时模型加载在后台进行）
         plagiarism_file_path = input("请输入要对比的抄袭论文路径（例如: test\\orig_0.8_add.txt）: ")
 
         plagiarism_text_future = executor.submit(read_file, plagiarism_file_path)
         # 获取原始文本内容
         orig_text = orig_text_future.result()
-
 
         # 等待模型加载完成
         checker = checker_future.result()
@@ -194,6 +209,7 @@ def main():
             f.write(f"与论文 {plagiarism_file_path} 的相似度：{score:.4f}, 查重结果：{result}\n")
 
         print("查重结果已输出到 ans.txt")
+
 
 if __name__ == "__main__":
     main()
