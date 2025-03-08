@@ -38,11 +38,11 @@ class PaperChecker:
         sentences = text.replace("\n", "。").split("。")  # 以句号拆分
         sentences = [s.strip() for s in sentences if s.strip()]
 
-        # 分词并打印每个句子的分词结果
-        for sentence in sentences:
-            words = jieba.cut(sentence)  # 分词
-            word_list = ' '.join(words)  # 将分词结果拼接成字符串
-            print(f"分词结果：{word_list}")  # 打印分词结果
+        # # 分词并打印每个句子的分词结果
+        # for sentence in sentences:
+        #     words = jieba.cut(sentence)  # 分词
+        #     word_list = ' '.join(words)  # 将分词结果拼接成字符串
+        #     print(f"分词结果：{word_list}")  # 打印分词结果
 
         # 返回分词后的句子
         sentences = [' '.join(jieba.cut(sentence)) for sentence in sentences]
@@ -76,16 +76,46 @@ class PaperChecker:
                 results.append((similarity, result))
         return results
 
+def read_file(file_path):
+    """读取文件内容"""
+    with open(file_path, "r", encoding="utf-8") as f:
+        return f.read()
 
-# 示例
-if __name__ == "__main__":
-    paper1 = "五冠霖"
-    paper2 = "人。"
+def compare_papers(orig_text, plagiarism_texts, checker, threshold=0.5):
+    """对比原文和抄袭文本，输出相似度"""
+    results = []
+    for i, paper_text in enumerate(plagiarism_texts):
+        score, result = checker.check_similarity(orig_text, paper_text, threshold)
+        results.append(f"与抄袭论文 {i + 1} 的相似度：{score:.4f}, 查重结果：{result}\n")
+    return results
+
+def main():
+    # 读取原文
+    orig_file_path = "test\\orig.txt"
+    orig_text = read_file(orig_file_path)
+    print(orig_text)
+
+    # 读取所有抄袭论文
+    plagiarism_texts = []
+    plagiarism_dir = "test"
+    for file_name in os.listdir(plagiarism_dir):
+        if file_name.startswith("orig_") and file_name.endswith(".txt"):
+            plagiarism_texts.append(read_file(os.path.join(plagiarism_dir, file_name)))
 
     # 初始化 PaperChecker
     checker = PaperChecker(model_name="sentence-transformers/paraphrase-xlm-r-multilingual-v1", cache_dir="./models",
                            use_gpu=True)
 
-    # 比较两个句子的相似度
-    score, result = checker.check_similarity(paper1, paper2, threshold=0.5)  # 设置阈值为 0.5
-    print(f"论文相似度：{score:.4f}, 查重结果：{result}")
+    # 进行对比
+    comparison_results = compare_papers(orig_text, plagiarism_texts, checker)
+
+    # 输出结果到 ans.txt
+    with open("ans.txt", "w", encoding="utf-8") as f:
+        f.write("原文与抄袭论文的查重结果：\n\n")
+        for result in comparison_results:
+            f.write(result)
+
+    print("查重结果已输出到 ans.txt")
+
+if __name__ == "__main__":
+    main()
