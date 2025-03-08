@@ -4,26 +4,31 @@ import torch
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
+import model
+
+
 class PaperChecker:
-    def __init__(self, model_name="sentence-transformers/paraphrase-MiniLM-L6-v2", cache_dir="./models"):
+    def __init__(self, model_name=model.MODEL_NAME, cache_dir="./models"):
         self.cache_dir = cache_dir
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        # 在初始化阶段加载模型
         self.model = SentenceTransformer(model_name, cache_folder=self.cache_dir, device=device)
         print(f"模型已加载至: {self.cache_dir}")
 
     def preprocess(self, text):
-        """文本预处理（分句+去除空白）"""
+        """文本预处理（分词+去除空白）"""
         sentences = text.replace("\n", "。").split("。")  # 以句号拆分
         sentences = [s.strip() for s in sentences if s.strip()]
+
+        # 返回分词后的句子
+        sentences = [' '.join(jieba.cut(sentence)) for sentence in sentences]
         return sentences
 
     def embed_sentences(self, sentences):
         """将句子转换为向量"""
         return self.model.encode(sentences, convert_to_tensor=True)
 
-    def check_similarity(self, text1, text2):
-        """计算两篇论文的相似度"""
+    def check_similarity(self, text1, text2, threshold=0.7):
+        """计算两篇论文的相似度，并根据阈值判断是否为重复"""
         sentences1 = self.preprocess(text1)
         sentences2 = self.preprocess(text2)
 
@@ -36,13 +41,20 @@ class PaperChecker:
         # 取最大相似度作为最终评分
         max_similarities = similarity_matrix.max(axis=1)
         overall_similarity = np.mean(max_similarities)
-        return overall_similarity
+
+        # 根据阈值判断是否为重复
+        if overall_similarity >= threshold:
+            return overall_similarity, "有重复"
+        else:
+            return overall_similarity, "没有重复"
+
 
 # 示例
 if __name__ == "__main__":
-    paper1 = "人工智能是一门新兴技术。它已经应用在多个领域，比如医疗、金融和自动驾驶。"
-    paper2 = "AI 是一种新技术，被广泛应用于医疗、金融和自动驾驶。"
+    paper1 = "我爱吃番茄，也很爱吃西红柿"
+    paper2 = "我喜欢吃西红柿和番茄。"
 
-    checker = PaperChecker()
-    score = checker.check_similarity(paper1, paper2)
-    print(f"论文相似度：{score:.4f}")
+    checker = PaperChecker(model_name=model.MODEL_NAME, cache_dir="./models")
+    score, result = checker.check_similarity(paper1, paper2, threshold=0.5)  # 设置阈值为 0.5
+    print(f"论文相似度：{score:.4f}, 查重结果：{result}")
+
