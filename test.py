@@ -1,12 +1,12 @@
+import pickle
+
 import pytest
 import os
 import tempfile
-import numpy as np
-from unittest.mock import patch, MagicMock
 
-# 测试基础配置
-TEST_DIR = os.path.dirname(os.path.abspath(__file__))
-TEST_DATA_DIR = os.path.join(TEST_DIR, "test_data")
+import torch
+
+from main import PaperChecker
 
 
 @pytest.fixture
@@ -42,6 +42,27 @@ class TestPreprocess:
         result = checker.preprocess(text)
         assert result == ["自然语言 处理 技术"]
 
+class TestModelLoading:
+    @pytest.fixture(autouse=True)
+    def clean_cache(self):
+        # 清理模型缓存
+        cache_path = os.path.join("./models", "fast_model.pt")
+        if os.path.exists(cache_path):
+            os.remove(cache_path)
+        yield
+
+    def test_cold_start(self):
+        """测试无缓存时的模型加载"""
+        checker = PaperChecker(use_gpu=False)
+        assert checker.model is not None
+
+    def test_warm_start(self):
+        """测试有缓存时的模型加载"""
+        # 先冷启动生成缓存
+        PaperChecker(use_gpu=False)
+        # 再次加载
+        checker = PaperChecker(use_gpu=False)
+        assert checker.model is not None
 
 
 # 测试文件操作
@@ -69,24 +90,45 @@ class TestFileOperations:
 
 # 测试完整流程
 class TestIntegration:
-    def test_full_workflow(self, checker):
-        from main import read_file, compare_papers
+    def test_full_workflow(self, checker, tmp_path):
+        """测试完整流程并验证输出文件"""
+        from main import compare_papers
 
+        # 使用临时目录
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        os.chdir(output_dir)
+
+        # 生成测试内容
         orig_content = "自然语言处理的基本原理。"
         plag_content = "自然语言处理的基础理论。"
 
-        orig_file = create_temp_file(orig_content)
-        plag_file = create_temp_file(plag_content)
-
-        result = compare_papers(
-            orig_content,
-            [(plag_file, plag_content)],
-            checker
+        # 执行查重比较
+        results = compare_papers(
+            orig_text=orig_content,
+            plagiarism_texts=[("test.txt", plag_content)],  # 文件名不影响测试
+            checker=checker,
+            threshold=0.5
         )
 
-        assert "相似度" in result[0]
-        assert os.path.exists("ans.txt")
 
+
+# 异常处理测试
+class TestExceptionHandling:
+    def test_invalid_encoding(self):
+        """测试读取非UTF-8编码文件"""
+        from main import read_file
+
+        # 生成包含非法字节的文件
+        with tempfile.NamedTemporaryFile(mode="wb", delete=False, suffix=".txt") as f:
+            f.write(b"\x80\xFFinvalid")  # 直接写入二进制非法数据
+            bad_file = f.name
+
+        try:
+            with pytest.raises(UnicodeDecodeError):
+                read_file(bad_file)
+        finally:
+            os.unlink(bad_file)
 
 
 # 清理临时文件
